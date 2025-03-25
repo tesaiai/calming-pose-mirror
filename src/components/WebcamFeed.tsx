@@ -4,17 +4,18 @@ import { Camera, RefreshCw } from 'lucide-react';
 
 interface WebcamFeedProps {
   onFrame?: (imageData: ImageData) => void;
+  isLoading?: boolean;
 }
 
-const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
+const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame, isLoading = false }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isCameraLoading, setIsCameraLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
 
   const startCamera = async () => {
-    setIsLoading(true);
+    setIsCameraLoading(true);
     setError(null);
     
     try {
@@ -30,7 +31,7 @@ const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
       console.error('Error accessing webcam:', err);
       setError('Unable to access your camera. Please check permissions and try again.');
     } finally {
-      setIsLoading(false);
+      setIsCameraLoading(false);
     }
   };
 
@@ -46,7 +47,7 @@ const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
   }, []);
 
   useEffect(() => {
-    if (!videoRef.current || !canvasRef.current || !isActive || isLoading) return;
+    if (!videoRef.current || !canvasRef.current || !isActive || isCameraLoading) return;
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -69,7 +70,7 @@ const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         
         // Send frame data to parent component for processing
-        if (onFrame) onFrame(imageData);
+        if (onFrame && !isLoading) onFrame(imageData);
       }
       
       animationId = requestAnimationFrame(processFrame);
@@ -80,7 +81,7 @@ const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [onFrame, isActive, isLoading]);
+  }, [onFrame, isActive, isCameraLoading, isLoading]);
 
   const toggleCamera = () => {
     if (isActive) {
@@ -96,10 +97,12 @@ const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
 
   return (
     <div className="relative rounded-2xl overflow-hidden bg-black/5 w-full aspect-video max-w-4xl mx-auto">
-      {isLoading && (
+      {(isCameraLoading || isLoading) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/10 backdrop-blur-sm">
           <div className="w-12 h-12 border-4 border-sage-400 border-t-transparent rounded-full animate-spin"></div>
-          <p className="mt-4 text-foreground/80">Initializing camera...</p>
+          <p className="mt-4 text-foreground/80">
+            {isCameraLoading ? "Initializing camera..." : "Loading pose detection model..."}
+          </p>
         </div>
       )}
       
@@ -123,7 +126,7 @@ const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
         autoPlay
         playsInline
         muted
-        onLoadedData={() => setIsLoading(false)}
+        onLoadedData={() => setIsCameraLoading(false)}
         className="w-full h-full object-cover"
       />
       
@@ -137,6 +140,7 @@ const WebcamFeed: React.FC<WebcamFeedProps> = ({ onFrame }) => {
           onClick={toggleCamera}
           className="p-3 glass rounded-full hover:bg-white/80 transition-colors"
           aria-label={isActive ? "Pause camera" : "Resume camera"}
+          disabled={isLoading}
         >
           {isActive ? (
             <span className="w-4 h-4 bg-red-500 rounded-sm"></span>

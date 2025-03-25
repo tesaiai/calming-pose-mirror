@@ -1,49 +1,99 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../components/Navbar';
 import WebcamFeed from '../components/WebcamFeed';
 import PoseDisplay from '../components/PoseDisplay';
 import { Clock, CheckCircle2 } from 'lucide-react';
+import { usePoseClassification } from '../hooks/usePoseClassification';
+import { toast } from '@/hooks/use-toast';
 
-// Sample pose data - in a real implementation, this would be from a model
-const samplePoses = [
-  'Mountain Pose', 
-  'Warrior I', 
-  'Warrior II', 
-  'Tree Pose', 
-  'Downward Dog'
-];
+// Import the MoveNet model
+import * as poseDetection from '@tensorflow-models/pose-detection';
+import '@tensorflow/tfjs-backend-webgl';
 
 const Practice = () => {
-  const [currentPose, setCurrentPose] = useState('');
-  const [confidence, setConfidence] = useState(0);
-  const [isDetecting, setIsDetecting] = useState(false);
+  const { currentPose, confidence, isDetecting, processPose } = usePoseClassification();
+  const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [sessionTime, setSessionTime] = useState(0);
   const [poseCount, setPoseCount] = useState(0);
+  const [recentPoses, setRecentPoses] = useState<string[]>([]);
+  const [isModelLoading, setIsModelLoading] = useState(true);
   
-  // For demo purposes, simulate pose detection
+  // Initialize MoveNet model
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (Math.random() > 0.3) {
-        const randomPose = samplePoses[Math.floor(Math.random() * samplePoses.length)];
-        const randomConfidence = 50 + Math.random() * 50;
+    const loadMoveNetModel = async () => {
+      try {
+        setIsModelLoading(true);
+        // Load the MoveNet model
+        const detectorConfig = {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
+          enableSmoothing: true
+        };
         
-        setCurrentPose(randomPose);
-        setConfidence(randomConfidence);
-        setIsDetecting(true);
+        const detector = await poseDetection.createDetector(
+          poseDetection.SupportedModels.MoveNet, 
+          detectorConfig
+        );
         
-        if (randomConfidence > 80) {
+        setDetector(detector);
+        toast({
+          title: "Model loaded successfully",
+          description: "You can now start practicing yoga poses."
+        });
+      } catch (error) {
+        console.error('Error loading MoveNet model:', error);
+        toast({
+          title: "Error loading model",
+          description: "Please refresh the page and try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsModelLoading(false);
+      }
+    };
+    
+    loadMoveNetModel();
+    
+    // Cleanup function
+    return () => {
+      if (detector) {
+        // No direct dispose method in pose-detection API, but good practice to cleanup
+      }
+    };
+  }, []);
+  
+  // Handle pose detection from webcam frames
+  const handleFrame = useCallback(async (imageData: ImageData) => {
+    if (!detector || isModelLoading) return;
+    
+    try {
+      // Create an HTMLImageElement from ImageData
+      const canvas = document.createElement('canvas');
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      ctx.putImageData(imageData, 0, 0);
+      
+      // Detect poses
+      const poses = await detector.estimatePoses(canvas);
+      
+      // Process the detected poses with our ONNX model
+      await processPose(poses);
+      
+      // Update recent poses list if a new pose is detected with high confidence
+      if (currentPose && confidence > 80) {
+        // Check if this is a new pose compared to the most recent one
+        if (recentPoses.length === 0 || recentPoses[0] !== currentPose) {
+          setRecentPoses(prev => [currentPose, ...prev.slice(0, 2)]);
           setPoseCount(prev => prev + 1);
         }
-      } else {
-        setIsDetecting(false);
-        setCurrentPose('');
-        setConfidence(0);
       }
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, []);
+    } catch (error) {
+      console.error('Error estimating poses:', error);
+    }
+  }, [detector, isModelLoading, processPose, currentPose, confidence, recentPoses]);
   
   // Session timer
   useEffect(() => {
@@ -61,12 +111,6 @@ const Practice = () => {
     
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
-  
-  // Handle frame from webcam - in a real app, this would process with a pose detection model
-  const handleFrame = (imageData: ImageData) => {
-    // Here you would run the pose detection model on the imageData
-    // This is just a placeholder for the real implementation
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -80,7 +124,7 @@ const Practice = () => {
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 animate-fade-in">
-            <WebcamFeed onFrame={handleFrame} />
+            <WebcamFeed onFrame={handleFrame} isLoading={isModelLoading} />
             
             <div className="mt-4 glass rounded-xl p-4 flex justify-between items-center">
               <div className="flex items-center">
@@ -105,12 +149,16 @@ const Practice = () => {
             <div className="mt-6 glass rounded-xl p-4">
               <h3 className="text-lg font-medium mb-3">Recent Poses</h3>
               <ul className="space-y-3">
-                {samplePoses.slice(0, 3).map((pose, index) => (
-                  <li key={index} className="flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-sage-400 mr-3"></div>
-                    <span className="text-foreground/80">{pose}</span>
-                  </li>
-                ))}
+                {recentPoses.length > 0 ? (
+                  recentPoses.map((pose, index) => (
+                    <li key={index} className="flex items-center">
+                      <div className="w-2 h-2 rounded-full bg-sage-400 mr-3"></div>
+                      <span className="text-foreground/80">{pose}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-foreground/60">No poses detected yet</li>
+                )}
               </ul>
             </div>
           </div>

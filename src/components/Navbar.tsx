@@ -45,6 +45,7 @@ const Navbar = () => {
             {[
               { name: 'Home', path: '/' },
               { name: 'Practice', path: '/practice' },
+              { name: 'Pose Library', path: '/pose-library' },
               { name: 'Settings', path: '/settings' },
             ].map((item) => (
               <Link
@@ -83,6 +84,7 @@ const Navbar = () => {
             {[
               { name: 'Home', path: '/' },
               { name: 'Practice', path: '/practice' },
+              { name: 'Pose Library', path: '/pose-library' },
               { name: 'Settings', path: '/settings' },
             ].map((item) => (
               <Link
